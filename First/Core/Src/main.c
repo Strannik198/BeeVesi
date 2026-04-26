@@ -21,6 +21,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
+/* USER CODE END Includes */
+
+
 
 /* USER CODE END Includes */
 
@@ -49,6 +54,9 @@ UART_HandleTypeDef huart2;
 static void delay_us(uint16_t us);
 static int32_t HX711_ReadRaw(void);
 static void uart_print(const char *s);
+
+static char buf[64];
+static int32_t raw;
 
 /* USER CODE END PV */
 
@@ -156,7 +164,7 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_TIM_Base_Init(&htim2);
+  HAL_TIM_Base_Start(&htim2);
   uart_print("H711 start\r\n");
 
   /* USER CODE END 2 */
@@ -168,7 +176,14 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    raw = HX711_ReadRaw();
+    snprintf(buf, sizeof(buf), "raw = %ld\r\n", (long)raw);
+    uart_print(buf);
+    HAL_Delay(500);
   }
+
+
+
   /* USER CODE END 3 */
 }
 
