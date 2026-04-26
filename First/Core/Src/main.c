@@ -1,174 +1,186 @@
-/* Подключаем заголовок, который сгенерировал CubeMX
-   В нём описаны типы HAL, прототипы SystemClock_Config и т.п. */
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2026 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
 #include "main.h"
-/* Стандартные заголовки для printf/strlen */
-#include <stdio.h>
-#include <string.h>
 
-/* ==== Глобальные объекты периферии ==== */
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 
-/* Дескриптор таймера TIM2 — нужен для delay_us() */
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim2;
-/* Дескриптор UART2 — для вывода строк в терминал */
+TIM_HandleTypeDef htim6;
+
 UART_HandleTypeDef huart2;
 
-/* Прототипы функций инициализации, которые мы определим ниже */
+/* USER CODE BEGIN PV */
+static void delay_us(uint16_t us);
+static int32_t HX711_ReadRaw(void);
+static void uart_print(const char *s);
+
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM6_Init(void);
+/* USER CODE BEGIN PFP */
 
-/* ==== Пользовательская часть 0: функции HX711 и UART ==== */
+/* USER CODE END PFP */
 
-/* Микросекундная задержка на TIM2.
-   Предполагаем, что TIM2 настроен так, что 1 тик = 1 мкс.
-   Устанавливаем счётчик в 0 и ждём, пока он не дорастёт до us. */
-static void delay_us(uint16_t us)
-{
-  __HAL_TIM_SET_COUNTER(&htim2, 0);
-  while (__HAL_TIM_GET_COUNTER(&htim2) < us);
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+static void delay_us(uint16_t us) {
+	__HAL_TIM_SET_COUNTER(&htim2, 0);
+	while (__HAL_TIM_GET_COUNTER(&htim2) <us)
+	{}
 }
 
-/* Чтение "сырых" данных HX711.
-   Используем: DT/DOUT на PB7 (вход), SCK/CLK на PA15 (выход).
-   Алгоритм повторяет библиотеку HX711 для Arduino:
-   - ждём, пока DOUT станет LOW (данные готовы)
-   - генерируем 24 такта SCK, на каждом читаем один бит
-   - даём 25‑й такт для выбора канала/усиления
-   - расширяем знак 24‑битного значения до 32‑битного */
+
+static void uart_print(const char *s) {
+	HAL_UART_Transmit(&huart2, (uint8_t*)s, strlen(s), 100);
+}
+
+
+
+
+
 static int32_t HX711_ReadRaw(void)
 {
   uint32_t data = 0;
-  /* Таймаут на случай, если датчик "умрёт" и DOUT не опустится */
   uint32_t timeout = HAL_GetTick();
 
-  /* 1. Ждём, пока линия DOUT (PB7) станет LOW.
-        Это означает "данные готовы". */
-  while (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET)
-  {
-    if ((HAL_GetTick() - timeout) > 500)  // 500 мс
-      return 0;                           // вернём 0 при таймауте
+  while (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET) {
+    if ((HAL_GetTick() - timeout) > 500)
+      return 0;
   }
 
-  /* 2. Читаем 24 бита.
-        Каждый цикл:
-        - поднимаем SCK (PA15)
-        - ждём пару микросекунд
-        - сдвигаем накопленное значение влево
-        - опускаем SCK
-        - снова ждём
-        - читаем состояние DOUT и, если там 1, ставим младший бит */
-  for (int i = 0; i < 24; i++)
-  {
-    /* фронт SCK = 1 */
+  for (int i = 0; i < 24; i++) {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
-    delay_us(2);   // ширина импульса ~2 мкс
+    delay_us(2);
 
-    /* готовим место под следующий бит */
     data <<= 1;
 
-    /* спад SCK = 0 */
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
-    delay_us(2);   // пауза между тактами
+    delay_us(2);
 
-    /* читаем DOUT (PB7); если HIGH, ставим младший бит в 1 */
     if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET)
-      data |= 1;
+    	data |= 1;
   }
 
-  /* 3. Делаем 25‑й импульс CLOCK.
-        Он говорит HX711: "принято, следующую выборку давай с тем же усилением". */
+
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
-  delay_us(2);
+  delay_us(us);
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
-  delay_us(2);
+  delay_us(us);
 
-  /* 4. Расширяем знак.
-        HX711 выдаёт 24‑битное значение в дополнительном коде (signed).
-        Старший бит (bit 23) — знак. Если он 1, нужно "дозаполнить" старшие
-        биты единицами, чтобы получить корректное 32‑битное signed. */
-  if (data & 0x800000)      // если установлен бит 23
-  {
-    data |= 0xFF000000;     // забиваем старшие 8 бит единицами
-  }
 
-  /* Теперь data — корректный int32 с тем же смыслом, что на Arduino. */
-  return (int32_t)data;
+
 }
 
-/* Удобная обёртка для вывода C‑строки через UART2 */
-static void uart_print(const char *s)
-{
-  /* Блокирующая передача: ждём до 100 мс */
-  HAL_UART_Transmit(&huart2, (uint8_t*)s, strlen(s), 100);
-}
 
-/* ==== main ==== */
+
+/* USER CODE END 0 */
 
 /**
-  * @brief  Точка входа программы.
+  * @brief  The application entry point.
+  * @retval int
   */
 int main(void)
 {
-  /* Инициализация HAL: включает системные таймеры, NVIC и базовые вещи */
+
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-  /* Настройка тактирования (HSI, делители шин и т.п.) */
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
   SystemClock_Config();
 
-  /* Инициализация GPIO (PA15, PB7), таймера TIM2 и UART2 */
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM2_Init();
   MX_USART2_UART_Init();
+  MX_TIM6_Init();
+  /* USER CODE BEGIN 2 */
 
-  /* Запускаем TIM2, чтобы delay_us() мог работать */
-  HAL_TIM_Base_Start(&htim2);
+  /* USER CODE END 2 */
 
-  char buf[64];      // буфер для строки printf
-  int32_t tare = 0;  // будущая "тара" — среднее значение без нагрузки
-
-  uart_print("HX711 start\r\n");
-
-  /* Первые 10 измерений используются для тарировки:
-     берём 10 сырых значений, усредняем и запоминаем как "0". */
-  for (int i = 0; i < 10; i++)
-  {
-    tare += HX711_ReadRaw();
-    HAL_Delay(50);          // небольшая пауза между измерениями
-  }
-  tare /= 10;               // среднее из 10 значений
-
-  uart_print("Tare done\r\n");
-
-  /* Основной цикл: читаем датчик, вычитаем тару, печатаем raw и net */
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
   while (1)
   {
-    int32_t raw = HX711_ReadRaw();   // сырое значение от АЦП
-    int32_t net = raw - tare;        // "чистое" значение после тары
+    /* USER CODE END WHILE */
 
-    /* Формируем строку вида: raw=-528270, net=-52285 */
-    snprintf(buf, sizeof(buf), "raw=%ld, net=%ld\r\n",
-             (long)raw, (long)net);
-    uart_print(buf);
-
-    HAL_Delay(300); // обновляем показания примерно 3–4 раза в секунду
+    /* USER CODE BEGIN 3 */
   }
+  /* USER CODE END 3 */
 }
 
-/* ==== Ниже — служебные функции, сгенерированные и слегка правленные ==== */
-
 /**
-  * @brief Настройка системного тактирования.
-  * Здесь включаем HSI (16 МГц) и настраиваем делители шин.
-  * Для нашего примера достаточно базовой конфигурации CubeMX.
+  * @brief System Clock Configuration
+  * @retval None
   */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
+  /** Configure the main internal regulator output voltage
+  */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
 
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -178,12 +190,12 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK
-                              | RCC_CLOCKTYPE_SYSCLK
-                              | RCC_CLOCKTYPE_PCLK1
-                              | RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_HSI;
-  RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
@@ -194,104 +206,189 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief Настройка TIM2.
-  * Делаем так, чтобы таймер тикал с частотой 1 МГц (1 мкс на тик):
-  * HSI = 16 МГц, Prescaler = 16-1 → 16 МГц / 16 = 1 МГц.
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_TIM2_Init(void)
 {
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler         = 16 - 1;          // 16 МГц / 16 = 1 МГц
-  htim2.Init.CounterMode       = TIM_COUNTERMODE_UP;
-  htim2.Init.Period            = 0xFFFF;          // максимум 65535 мкс
-  htim2.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.Prescaler = 15;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
-
   sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
   if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
   {
     Error_Handler();
   }
-
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode     = TIM_MASTERSLAVEMODE_DISABLE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
 }
 
 /**
-  * @brief Настройка USART2 (TX/RX) для вывода в терминал.
-  * Стандартные параметры: 115200 бод, 8N1, без аппаратного контроля потока.
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 0;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 65535;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_USART2_UART_Init(void)
 {
-  huart2.Instance        = USART2;
-  huart2.Init.BaudRate   = 115200;
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits   = UART_STOPBITS_1;
-  huart2.Init.Parity     = UART_PARITY_NONE;
-  huart2.Init.Mode       = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl  = UART_HWCONTROL_NONE;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart2.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
 }
 
 /**
-  * @brief Настройка GPIO.
-  * Включаем тактирование портов A и B.
-  * PA15 — SCK (выход без подтяжек).
-  * PB7  — DOUT/DT (вход без подтяжек).
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
 
+  /* USER CODE END MX_GPIO_Init_1 */
+
+  /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /* Начальное состояние PA15 = 0 (SCK в LOW) */
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
 
-  /* SCK: PA15 как Output Push-Pull, без подтяжек, низкая скорость */
-  GPIO_InitStruct.Pin   = GPIO_PIN_15;
-  GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull  = GPIO_NOPULL;
+  /*Configure GPIO pin : PA15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* DT: PB7 как вход без подтяжек */
-  GPIO_InitStruct.Pin  = GPIO_PIN_7;
+  /*Configure GPIO pin : PB7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
 /**
-  * @brief Обработчик ошибки: просто встаём в бесконечный цикл.
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
   */
 void Error_Handler(void)
 {
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
   }
+  /* USER CODE END Error_Handler_Debug */
 }
-
 #ifdef USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* Можно добавить вывод имени файла и строки */
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
