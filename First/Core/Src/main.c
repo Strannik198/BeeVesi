@@ -105,9 +105,14 @@ static int32_t HX711_ReadRaw(void)
 
 
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
-  delay_us(us);
+  delay_us(2);
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
-  delay_us(us);
+  delay_us(2);
+
+  if (data & 0x800000)
+	  data |= 0xFF000000;
+
+  return (int32_t)data;
 
 
 
@@ -150,6 +155,9 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
+
+  HAL_TIM_Base_Init(&htim2);
+  uart_print("H711 start\r\n");
 
   /* USER CODE END 2 */
 
